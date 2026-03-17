@@ -52,6 +52,7 @@ class AuthenticationRepository {
 
   // Retrieve tokens securely
   Future<String?> getAccessToken() async => await _secureStorage.read(key: 'accessToken');
+  User? getCurrentUser() => _userBox.get('current_user');
 
   // Logout
   Future<void> logout() async {

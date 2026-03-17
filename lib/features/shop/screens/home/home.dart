@@ -11,6 +11,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loggedInUser = getIt<AuthenticationRepository>().getCurrentUser();
     return Scaffold(
       appBar: AppBar(
         title: Text('HIU Dashboard', style: Theme.of(context).textTheme.headlineMedium),
@@ -34,7 +35,7 @@ class HomeScreen extends StatelessWidget {
           padding: const EdgeInsets.all(TSizes.defaultSpace),
           child: Column(
             children: [
-              Text('Welcome to Fortes Energy HIU Control', style: Theme.of(context).textTheme.bodyLarge),
+              Text('Welcome ${loggedInUser?.username ?? "Guest"}', style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: TSizes.spaceBtwSections),
               
               // Device Status Card
