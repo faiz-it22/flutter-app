@@ -34,11 +34,13 @@ class TBluetoothService {
     await fbp.FlutterBluePlus.stopScan();
   }
 
-  /// Connect to a device
-  Future<void> connect(fbp.BluetoothDevice device, {bool autoConnect = false}) async {
+  /// Connect to a device and return discovered services
+  Future<List<fbp.BluetoothService>> connect(fbp.BluetoothDevice device, {bool autoConnect = false}) async {
     try {
       await device.connect(autoConnect: autoConnect);
-      TLoggerHelper.info("Connected to ${device.platformName}");
+      final services = await device.discoverServices();
+      TLoggerHelper.info("Connected to ${device.platformName}, found ${services.length} services");
+      return services;
     } catch (e) {
       TLoggerHelper.error("Error connecting to device: $e");
       rethrow;
@@ -78,6 +80,7 @@ class TBluetoothService {
   /// Read data from a characteristic
   Future<List<int>> readCharacteristic(fbp.BluetoothCharacteristic characteristic) async {
     try {
+      print("Reading from characteristic: ${characteristic.uuid}");
       return await characteristic.read();
     } catch (e) {
       TLoggerHelper.error("Error reading characteristic: $e");
