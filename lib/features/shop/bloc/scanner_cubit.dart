@@ -5,77 +5,107 @@ import 'package:injectable/injectable.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:projects/data/services/bluetooth_service.dart';
 
-enum ScannerStatus { initial, loading, bluetoothDisabled, permissionDenied, success, failure }
+enum ScannerStatus {
+  initial,
+  loading,
+  bluetoothDisabled,
+  permissionDenied,
+  success,
+  failure,
+  connecting,
+  connected,
+  disconnecting,
+}
 
 class ScannerState {
   final ScannerStatus status;
   final List<ScanResult> devices;
   final String? errorMessage;
   final BluetoothAdapterState adapterState;
+  final BluetoothDevice? connectedDevice;
+  final List<BluetoothService> services;
+  final Map<String, List<int>> characteristicValues;
+  final Set<String> loadingCharacteristics;
 
   ScannerState({
     this.status = ScannerStatus.initial,
     this.devices = const [],
     this.errorMessage,
     this.adapterState = BluetoothAdapterState.unknown,
+    this.connectedDevice,
+    this.services = const [],
+    this.characteristicValues = const {},
+    this.loadingCharacteristics = const {},
   });
+
+  bool get isConnected => status == ScannerStatus.connected && connectedDevice != null;
 
   ScannerState copyWith({
     ScannerStatus? status,
     List<ScanResult>? devices,
     String? errorMessage,
     BluetoothAdapterState? adapterState,
+    BluetoothDevice? connectedDevice,
+    bool clearConnectedDevice = false,
+    List<BluetoothService>? services,
+    Map<String, List<int>>? characteristicValues,
+    Set<String>? loadingCharacteristics,
   }) {
     return ScannerState(
       status: status ?? this.status,
       devices: devices ?? this.devices,
       errorMessage: errorMessage ?? this.errorMessage,
       adapterState: adapterState ?? this.adapterState,
+      connectedDevice: clearConnectedDevice ? null : (connectedDevice ?? this.connectedDevice),
+      services: services ?? this.services,
+      characteristicValues: characteristicValues ?? this.characteristicValues,
+      loadingCharacteristics: loadingCharacteristics ?? this.loadingCharacteristics,
     );
   }
 }
 
-@injectable
+@lazySingleton
 class ScannerCubit extends Cubit<ScannerState> {
   final TBluetoothService _bluetoothService;
   StreamSubscription? _adapterStateSubscription;
   StreamSubscription? _scanResultsSubscription;
 
   ScannerCubit(this._bluetoothService) : super(ScannerState()) {
-    // Monitor Bluetooth Adapter State (ON/OFF)
-    // Renamed parameter to 'newAdapterState' to avoid shadowing the Cubit's 'state'
     _adapterStateSubscription = _bluetoothService.adapterState.listen((newAdapterState) {
       emit(state.copyWith(adapterState: newAdapterState));
-      
-      // If bluetooth is turned off while we were doing something, update status
-      if (newAdapterState != BluetoothAdapterState.on && newAdapterState != BluetoothAdapterState.unknown) {
-        emit(state.copyWith(status: ScannerStatus.bluetoothDisabled));
+      if (newAdapterState != BluetoothAdapterState.on &&
+          newAdapterState != BluetoothAdapterState.unknown) {
+        emit(state.copyWith(
+          status: ScannerStatus.bluetoothDisabled,
+          clearConnectedDevice: true,
+          services: [],
+        ));
       }
     });
 
-    // Monitor Scan Results
     _scanResultsSubscription = _bluetoothService.scanResults.listen((results) {
-      emit(state.copyWith(devices: results, status: ScannerStatus.success));
+      // Don't overwrite connected state with scan results
+      if (state.status != ScannerStatus.connected &&
+          state.status != ScannerStatus.connecting) {
+        emit(state.copyWith(devices: results, status: ScannerStatus.success));
+      } else {
+        emit(state.copyWith(devices: results));
+      }
     });
   }
 
-  /// Entry point to start the scanning process with all necessary checks
   Future<void> initScan() async {
-    // 1. Request Permissions
     final permissionsGranted = await _requestPermissions();
     if (!permissionsGranted) {
       emit(state.copyWith(status: ScannerStatus.permissionDenied));
       return;
     }
 
-    // 2. Check if Bluetooth is ON
     if (state.adapterState != BluetoothAdapterState.on) {
-      // Prompt user to turn on Bluetooth if it's off
       if (state.adapterState == BluetoothAdapterState.off) {
         try {
-          // On Android, we can try to turn it on automatically or show the system dialog
           await FlutterBluePlus.turnOn();
-        } catch (e) {
+        } catch (_) {
           emit(state.copyWith(status: ScannerStatus.bluetoothDisabled));
           return;
         }
@@ -85,7 +115,6 @@ class ScannerCubit extends Cubit<ScannerState> {
       }
     }
 
-    // 3. Start Scanning
     await startScanning();
   }
 
@@ -100,13 +129,64 @@ class ScannerCubit extends Cubit<ScannerState> {
   }
 
   Future<bool> _requestPermissions() async {
-    Map<Permission, PermissionStatus> statuses = await [
+    final statuses = await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
       Permission.location,
     ].request();
+    return statuses.values.every((s) => s.isGranted);
+  }
 
-    return statuses.values.every((status) => status.isGranted);
+  Future<void> connect(BluetoothDevice device) async {
+    emit(state.copyWith(status: ScannerStatus.connecting));
+    try {
+      await _bluetoothService.stopScan();
+      final services = await _bluetoothService.connect(device);
+      emit(state.copyWith(
+        status: ScannerStatus.connected,
+        connectedDevice: device,
+        services: services,
+        characteristicValues: {},
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        status: ScannerStatus.failure,
+        errorMessage: 'Failed to connect: $e',
+      ));
+    }
+  }
+
+  Future<void> disconnect() async {
+    final device = state.connectedDevice;
+    if (device == null) return;
+    emit(state.copyWith(status: ScannerStatus.disconnecting));
+    try {
+      await _bluetoothService.disconnect(device);
+    } catch (_) {}
+    emit(state.copyWith(
+      status: ScannerStatus.success,
+      clearConnectedDevice: true,
+      services: [],
+      characteristicValues: {},
+    ));
+  }
+
+  Future<void> readCharacteristic(BluetoothCharacteristic characteristic) async {
+    final key = characteristic.characteristicUuid.toString();
+    emit(state.copyWith(
+      loadingCharacteristics: {...state.loadingCharacteristics, key},
+    ));
+    try {
+      final value = await _bluetoothService.readCharacteristic(characteristic);
+      final updated = Map<String, List<int>>.from(state.characteristicValues);
+      updated[key] = value;
+      final loading = Set<String>.from(state.loadingCharacteristics)..remove(key);
+      emit(state.copyWith(characteristicValues: updated, loadingCharacteristics: loading));
+    } catch (e) {
+      print(e.toString());
+      final loading = Set<String>.from(state.loadingCharacteristics)..remove(key);
+      emit(state.copyWith(loadingCharacteristics: loading));
+    }
   }
 
   @override

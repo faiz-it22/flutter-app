@@ -65,7 +65,7 @@ extension GetItInjectableX on _i1.GetIt {
         () => _i13.ConnectivityCubit(gh<_i7.NetworkManager>()));
     gh.factory<_i14.LoginBloc>(() => _i14.LoginBloc(
         authenticationRepository: gh<_i11.AuthenticationRepository>()));
-    gh.factory<_i15.ScannerCubit>(
+    gh.lazySingleton<_i15.ScannerCubit>(
         () => _i15.ScannerCubit(gh<_i9.TBluetoothService>()));
     return this;
   }
