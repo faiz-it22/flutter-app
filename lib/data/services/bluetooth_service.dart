@@ -38,6 +38,10 @@ class TBluetoothService {
   Future<List<fbp.BluetoothService>> connect(fbp.BluetoothDevice device, {bool autoConnect = false}) async {
     try {
       await device.connect(autoConnect: autoConnect);
+      // Give the Android GATT stack a moment to settle before discovering
+      // services — skipping this causes readCharacteristic() to return false
+      // on the first read attempt for many devices.
+      await Future.delayed(const Duration(milliseconds: 500));
       final services = await device.discoverServices();
       TLoggerHelper.info("Connected to ${device.platformName}, found ${services.length} services");
       return services;

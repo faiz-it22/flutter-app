@@ -1,20 +1,20 @@
 
 class BluetoothUuids {
   static const Map<String, String> _uuidMap = {
-      '1800': 'Generic Access',
-      '1801': 'Generic Attribute',
-      '1802': 'Immediate Alert',
-      '1803': 'Link Loss',
-      '1804': 'Tx Power',
-      '1805': 'Current Time Service',
-      '1806': 'Reference Time Update',
-      '1807': 'Next DST Change',
-      '1808': 'Glucose',
-      '1809': 'Health Thermometer',
-      '180a': 'Device Information',
-      '180d': 'Heart Rate',
-      '180f': 'Battery Service',
-      '1812': 'Human Interface Device',
+      "1800": "Generic Access",
+      "1801": "Generic Attribute",
+      "1802": "Immediate Alert",
+      "1803": "Link Loss",
+      "1804": "Tx Power",
+      "1805": "Current Time Service",
+      "1806": "Reference Time Update",
+      "1807": "Next DST Change",
+      "1808": "Glucose",
+      "1809": "Health Thermometer",
+      "180a": "Device Information",
+      "180d": "Heart Rate",
+      "180f": "Battery Service",
+      "1812": "Human Interface Device",
       "2a00": "Device Name",
       "2a01": "Appearance",
       "2a02": "Peripheral Privacy Flag",
@@ -446,7 +446,7 @@ class BluetoothUuids {
       "2bf0": "Battery Energy Status",
       "2bf1": "Observation Schedule Changed",
       "2bf2": "Current Elapsed Time",
-    "2bf3": "Health Sensor Features",
+      "2bf3": "Health Sensor Features",
     }; 
 
   /// Maps a BLE UUID short code to its human-readable name.

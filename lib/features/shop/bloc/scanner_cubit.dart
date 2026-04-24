@@ -26,6 +26,8 @@ class ScannerState {
   final List<BluetoothService> services;
   final Map<String, List<int>> characteristicValues;
   final Set<String> loadingCharacteristics;
+  final Map<String, String> characteristicErrors;
+  final String? connectingDeviceId;
 
   ScannerState({
     this.status = ScannerStatus.initial,
@@ -36,6 +38,8 @@ class ScannerState {
     this.services = const [],
     this.characteristicValues = const {},
     this.loadingCharacteristics = const {},
+    this.characteristicErrors = const {},
+    this.connectingDeviceId,
   });
 
   bool get isConnected => status == ScannerStatus.connected && connectedDevice != null;
@@ -50,6 +54,9 @@ class ScannerState {
     List<BluetoothService>? services,
     Map<String, List<int>>? characteristicValues,
     Set<String>? loadingCharacteristics,
+    Map<String, String>? characteristicErrors,
+    String? connectingDeviceId,
+    bool clearConnectingDevice = false,
   }) {
     return ScannerState(
       status: status ?? this.status,
@@ -60,6 +67,8 @@ class ScannerState {
       services: services ?? this.services,
       characteristicValues: characteristicValues ?? this.characteristicValues,
       loadingCharacteristics: loadingCharacteristics ?? this.loadingCharacteristics,
+      characteristicErrors: characteristicErrors ?? this.characteristicErrors,
+      connectingDeviceId: clearConnectingDevice ? null : (connectingDeviceId ?? this.connectingDeviceId),
     );
   }
 }
@@ -138,7 +147,10 @@ class ScannerCubit extends Cubit<ScannerState> {
   }
 
   Future<void> connect(BluetoothDevice device) async {
-    emit(state.copyWith(status: ScannerStatus.connecting));
+    emit(state.copyWith(
+      status: ScannerStatus.connecting,
+      connectingDeviceId: device.remoteId.str,
+    ));
     try {
       await _bluetoothService.stopScan();
       final services = await _bluetoothService.connect(device);
@@ -147,11 +159,13 @@ class ScannerCubit extends Cubit<ScannerState> {
         connectedDevice: device,
         services: services,
         characteristicValues: {},
+        clearConnectingDevice: true,
       ));
     } catch (e) {
       emit(state.copyWith(
         status: ScannerStatus.failure,
         errorMessage: 'Failed to connect: $e',
+        clearConnectingDevice: true,
       ));
     }
   }
@@ -173,20 +187,38 @@ class ScannerCubit extends Cubit<ScannerState> {
 
   Future<void> readCharacteristic(BluetoothCharacteristic characteristic) async {
     final key = characteristic.characteristicUuid.toString();
+    final clearedErrors = Map<String, String>.from(state.characteristicErrors)..remove(key);
     emit(state.copyWith(
       loadingCharacteristics: {...state.loadingCharacteristics, key},
+      characteristicErrors: clearedErrors,
     ));
-    try {
-      final value = await _bluetoothService.readCharacteristic(characteristic);
-      final updated = Map<String, List<int>>.from(state.characteristicValues);
-      updated[key] = value;
-      final loading = Set<String>.from(state.loadingCharacteristics)..remove(key);
-      emit(state.copyWith(characteristicValues: updated, loadingCharacteristics: loading));
-    } catch (e) {
-      print(e.toString());
-      final loading = Set<String>.from(state.loadingCharacteristics)..remove(key);
-      emit(state.copyWith(loadingCharacteristics: loading));
+
+    Object? lastError;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await Future.delayed(const Duration(milliseconds: 300));
+      try {
+        final value = await _bluetoothService.readCharacteristic(characteristic);
+        final updated = Map<String, List<int>>.from(state.characteristicValues);
+        updated[key] = value;
+        final loading = Set<String>.from(state.loadingCharacteristics)..remove(key);
+        emit(state.copyWith(characteristicValues: updated, loadingCharacteristics: loading));
+        return;
+      } catch (e) {
+        lastError = e;
+      }
     }
+
+    final loading = Set<String>.from(state.loadingCharacteristics)..remove(key);
+    final errors = Map<String, String>.from(state.characteristicErrors);
+    errors[key] = _friendlyReadError(lastError.toString());
+    emit(state.copyWith(loadingCharacteristics: loading, characteristicErrors: errors));
+  }
+
+  String _friendlyReadError(String raw) {
+    if (raw.contains('returned false')) return 'Device refused the read (try reconnecting)';
+    if (raw.contains('133') || raw.contains('GATT')) return 'GATT error — try reconnecting';
+    if (raw.contains('not connected')) return 'Device disconnected';
+    return 'Read failed';
   }
 
   @override

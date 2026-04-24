@@ -293,6 +293,8 @@ class _DeviceList extends StatelessWidget {
         final name = device.platformName.isNotEmpty
             ? device.platformName
             : 'Unknown Device';
+        final isThisConnecting =
+            state.connectingDeviceId == device.remoteId.str;
 
         return Card(
           elevation: 0,
@@ -342,7 +344,7 @@ class _DeviceList extends StatelessWidget {
                 _RssiBars(rssi: result.rssi),
                 const SizedBox(width: 12),
                 FilledButton(
-                  onPressed: isBusy
+                  onPressed: isThisConnecting
                       ? null
                       : () =>
                           context.read<ScannerCubit>().connect(device),
@@ -351,7 +353,7 @@ class _DeviceList extends StatelessWidget {
                         horizontal: 16, vertical: 10),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: isBusy
+                  child: isThisConnecting
                       ? const SizedBox(
                           width: 16,
                           height: 16,
@@ -561,6 +563,7 @@ class _CharacteristicTile extends StatelessWidget {
     final displayName = BluetoothUuids.mapUuids(rawUuid);
     final isLoading = state.loadingCharacteristics.contains(rawUuid);
     final value = state.characteristicValues[rawUuid];
+    final readError = state.characteristicErrors[rawUuid];
 
     final props = [
       if (characteristic.properties.read) 'Read',
@@ -628,12 +631,21 @@ class _CharacteristicTile extends StatelessWidget {
                     )
                   : IconButton(
                       icon: Icon(
-                        value == null
-                            ? Iconsax.eye_copy
-                            : Iconsax.refresh_copy,
+                        readError != null && value == null
+                            ? Icons.error_outline_rounded
+                            : value == null
+                                ? Iconsax.eye_copy
+                                : Iconsax.refresh_copy,
                         size: 18,
+                        color: readError != null && value == null
+                            ? Colors.red
+                            : null,
                       ),
-                      tooltip: value == null ? 'Read value' : 'Re-read',
+                      tooltip: readError != null && value == null
+                          ? readError
+                          : value == null
+                              ? 'Read value'
+                              : 'Re-read',
                       onPressed: () => context
                           .read<ScannerCubit>()
                           .readCharacteristic(characteristic),
@@ -725,6 +737,7 @@ class _CharacteristicDetailSheet extends StatelessWidget {
       builder: (context, state) {
         final isLoading = state.loadingCharacteristics.contains(rawUuid);
         final value = state.characteristicValues[rawUuid];
+        final readError = state.characteristicErrors[rawUuid];
 
         return Padding(
           padding: EdgeInsets.only(
@@ -789,15 +802,51 @@ class _CharacteristicDetailSheet extends StatelessWidget {
                   ),
                 )
               else if (value != null) ...[
+                
                 _ValueRow(title: 'HEX', value: _hexString(value)),
                 const SizedBox(height: 10),
-                _ValueRow(title: 'UTF-8', value: _utf8String(value)),
-                if (value.length <= 4) ...[
+                _ValueRow(
+                  title: 'UTF-8',
+                  value: _printableUtf8(value) ?? _hexString(value),
+                ),
+                if (_boolValue(value) case final b?) ...[
+                  const SizedBox(height: 10),
+                  _ValueRow(title: 'BOOL', value: b),
+                ] else if (value.length <= 4) ...[
                   const SizedBox(height: 10),
                   _ValueRow(
-                      title: 'INT (LE)', value: _leInt(value).toString()),
+                      title: 'UINT (LE)',
+                      value: _leUint(value).toString()),
+                  if (_leSint(value) case final signed?) ...[
+                    const SizedBox(height: 10),
+                    _ValueRow(title: 'SINT (LE)', value: signed.toString()),
+                  ],
                 ],
-              ] else
+                if (_decodedHexString(value) case final decoded?) ...[
+                  const SizedBox(height: 10),
+                  _ValueRow(title: 'DECODED', value: decoded),
+                ],
+              ] else if (readError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: Colors.red, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          readError,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.red,
+                                  ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
                 Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -840,21 +889,73 @@ class _CharacteristicDetailSheet extends StatelessWidget {
       .join(' ')
       .toUpperCase();
 
-  String _utf8String(List<int> bytes) {
+  /// Returns the UTF-8 decoded string only when every character is printable.
+  /// Returns null for binary data, empty strings, or invalid UTF-8 — hiding
+  /// the row entirely so garbage like "K" for battery level 75 isn't shown.
+  String? _printableUtf8(List<int> bytes) {
     try {
       final s = utf8.decode(bytes);
-      return s.isEmpty ? '(empty)' : s;
+      if (s.isEmpty) return null;
+      const allowed = {0x09, 0x0A, 0x0D}; // tab, LF, CR
+      if (s.runes.any((r) => r < 0x20 && !allowed.contains(r))) return null;
+      return s;
     } catch (_) {
-      return '(not valid UTF-8)';
+      return null;
     }
   }
 
-  int _leInt(List<int> bytes) {
+  /// Returns "true"/"false" only when the value is unambiguously boolean.
+  String? _boolValue(List<int> bytes) {
+    if (bytes.length != 2) return null;
+    if (bytes[0] == 0 && bytes[1] == 0) return 'false';
+    if (bytes[0] == 0 && bytes[1] == 1) return 'true';
+    return null;
+  }
+
+  /// Unsigned little-endian integer (1–4 bytes).
+  int _leUint(List<int> bytes) {
     int result = 0;
     for (int i = bytes.length - 1; i >= 0; i--) {
       result = (result << 8) | (bytes[i] & 0xFF);
     }
     return result;
+  }
+
+  /// Signed little-endian integer. Returns null when the signed and unsigned
+  /// interpretations are identical (no point showing two identical rows).
+  int? _leSint(List<int> bytes) {
+    final unsigned = _leUint(bytes);
+    final bits = bytes.length * 8;
+    final threshold = 1 << (bits - 1);
+    final signed = unsigned >= threshold ? unsigned - (1 << bits) : unsigned;
+    return signed != unsigned ? signed : null;
+  }
+
+  /// Returns a decoded string if the bytes represent a hex-encoded string
+  /// (e.g. bytes for "48656C6C6F" → "Hello"), otherwise null.
+  String? _decodedHexString(List<int> bytes) {
+    String asText;
+    try {
+      asText = utf8.decode(bytes).trim();
+    } catch (_) {
+      return null;
+    }
+    final clean = asText.startsWith('0x') || asText.startsWith('0X')
+        ? asText.substring(2)
+        : asText;
+    if (clean.isEmpty || clean.length % 2 != 0) return null;
+    if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(clean)) return null;
+    try {
+      final decoded = List.generate(
+        clean.length ~/ 2,
+        (i) => int.parse(clean.substring(i * 2, i * 2 + 2), radix: 16),
+      );
+      final result = utf8.decode(decoded);
+      // Only show if the result is meaningfully different from the UTF-8 row
+      return result != asText ? result : null;
+    } catch (_) {
+      return null;
+    }
   }
 }
 
