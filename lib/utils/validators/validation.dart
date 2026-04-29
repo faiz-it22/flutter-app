@@ -1,7 +1,6 @@
 import 'package:intl/intl.dart';
 
 import '../constants/text_strings.dart';
-import '../constants/texts.dart' hide TTexts;
 
 /// VALIDATION CLASS
 class TValidator {

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
-import 'package:projects/common/widgets/connectivity/connectivity_cubit.dart';
 import 'package:projects/features/authentication/bloc/login_bloc.dart';
 import 'package:projects/features/authentication/bloc/login_event.dart';
 import 'package:projects/features/authentication/bloc/login_state.dart';

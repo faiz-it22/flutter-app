@@ -452,7 +452,7 @@ class BluetoothUuids {
   /// Maps a BLE UUID short code to its human-readable name.
   /// Falls back to the raw [uuid] string if not found.
   static String mapUuids(String uuid) {
-    print("Decoding Uuid: ${uuid}, ${_uuidMap[uuid]}");
+    print("Decoding Uuid: $uuid, ${_uuidMap[uuid]}");
     return _uuidMap[uuid] ?? uuid;
   }
 }
