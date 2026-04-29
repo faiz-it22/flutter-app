@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:projects/common/widgets/connectivity/connectivity_banner.dart';
 import 'package:projects/common/widgets/connectivity/connectivity_cubit.dart';
+import 'package:projects/data/services/modbus_service.dart';
+import 'package:projects/features/shop/bloc/modbus_cubit.dart';
 import 'package:projects/features/shop/bloc/scanner_cubit.dart';
 import 'package:projects/init/injection.dart';
 import 'package:projects/routes/app_pages.dart';
@@ -16,6 +18,7 @@ class App extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => getIt<ConnectivityCubit>()),
         BlocProvider(create: (_) => getIt<ScannerCubit>()),
+        BlocProvider(create: (_) => ModbusCubit(ModbusService())),
       ],
       child: MaterialApp.router(
         themeMode: ThemeMode.system,

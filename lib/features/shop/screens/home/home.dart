@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:projects/data/repositories/authentication_repository.dart';
+import 'package:projects/features/shop/bloc/modbus_cubit.dart';
 import 'package:projects/features/shop/bloc/scanner_cubit.dart';
+import 'package:projects/features/shop/screens/home/widgets/modbus_bottom_sheet.dart';
 import 'package:projects/features/shop/screens/home/widgets/scanner_bottom_sheet.dart';
 import 'package:projects/init/injection.dart';
 import 'package:projects/routes/routes.dart';
@@ -49,6 +51,19 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: TSizes.spaceBtwItems),
             BlocBuilder<ScannerCubit, ScannerState>(
               builder: (context, state) => _DeviceStatusCard(state: state),
+            ),
+            const SizedBox(height: TSizes.spaceBtwSections),
+            Text(
+              'Modbus',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: TSizes.spaceBtwItems),
+            BlocBuilder<ScannerCubit, ScannerState>(
+              builder: (context, state) =>
+                  _ModbusCard(isConnected: state.isConnected),
             ),
           ],
         ),
@@ -222,6 +237,102 @@ class _DeviceStatusCard extends StatelessWidget {
                   size: 18,
                 ),
                 label: Text(isConnected ? 'View Device' : 'Scan for Devices'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModbusCard extends StatelessWidget {
+  const _ModbusCard({required this.isConnected});
+  final bool isConnected;
+
+  void _openSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => BlocProvider.value(
+        value: context.read<ModbusCubit>(),
+        child: const ModbusBottomSheet(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TSizes.cardRadiusLg),
+        side: BorderSide(
+          color: isConnected
+              ? TColors.primary.withValues(alpha: 0.4)
+              : Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      color: isConnected ? TColors.primary.withValues(alpha: 0.04) : null,
+      child: Padding(
+        padding: const EdgeInsets.all(TSizes.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: (isConnected ? TColors.primary : Colors.grey)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.memory_rounded,
+                    color: isConnected ? TColors.primary : Colors.grey,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Register Operations',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isConnected
+                            ? 'Read · Write · Stream'
+                            : 'Connect a device first',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: isConnected
+                                  ? TColors.primary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: TSizes.spaceBtwItems),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: isConnected ? () => _openSheet(context) : null,
+                icon: const Icon(Icons.tune_rounded, size: 18),
+                label: const Text('Open Modbus Panel'),
               ),
             ),
           ],
